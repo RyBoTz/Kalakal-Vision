@@ -54,8 +54,9 @@ class YoloInferenceResponse {
 }
 
 class YoloApiService {
-  // 127.0.0.1 for Windows/Web, 10.0.2.2 for Android emulator
-  static const String defaultApiUrl = 'http://127.0.0.1:8000/predict';
+  // Use local PC IP 192.168.1.6 for physical phone over Wi-Fi, 127.0.0.1 for desktop/web
+  static const String defaultApiUrl = 'http://192.168.1.6:8000/predict';
+  static const String localhostApiUrl = 'http://127.0.0.1:8000/predict';
 
   static Future<YoloInferenceResponse> predictImageBytes(
     Uint8List bytes, {
