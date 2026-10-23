@@ -26,19 +26,17 @@ class _ScanScreenState extends State<ScanScreen> {
   String? _detectedLabel;
   final ImagePicker _picker = ImagePicker();
 
-  MaterialCategory _mapYoloClassToCategory(String yoloClass) {
+  MaterialCategory? _mapYoloClassToCategory(String yoloClass) {
     switch (yoloClass.toLowerCase()) {
       case 'plastic':
-        return MaterialCategory.plasticPet;
+        return MaterialCategory.plastic;
       case 'metal':
-        return MaterialCategory.scrapIron;
+        return MaterialCategory.metal;
       case 'paper':
-        return MaterialCategory.corrugatedCardboard;
-      case 'glass':
-        return MaterialCategory.aluminumCans; // fallback recycle slot
-      case 'waste':
+        return MaterialCategory.paper;
       default:
-        return MaterialCategory.plasticPet;
+        // Model detected other classes like Glass or general Waste not in target scope
+        return null;
     }
   }
 
@@ -58,25 +56,37 @@ class _ScanScreenState extends State<ScanScreen> {
     if (response.success && response.topDetection != null) {
       final top = response.topDetection!;
       final cat = _mapYoloClassToCategory(top.className);
+
+      if (cat == null) {
+        setState(() {
+          _isScanning = false;
+          _detectedLabel = "Non-target item detected: ${top.className}";
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Detected ${top.className}. This app focuses on Plastic, Paper, and Metal."),
+            backgroundColor: Colors.amber.shade800,
+          ),
+        );
+        return;
+      }
+
       final conf = top.confidence;
       final grade = conf > 0.7
           ? QualityGrade.gradeA
           : (conf > 0.4 ? QualityGrade.gradeB : QualityGrade.gradeC);
 
-      double pricePerKg = 12.0;
+      double pricePerKg = 14.0;
       String action = 'SELL NOW (Peak Demand)';
       bool sellNow = true;
 
-      if (cat == MaterialCategory.plasticPet) {
+      if (cat == MaterialCategory.plastic) {
         pricePerKg = 14.0;
         action = 'SELL NOW (High Recycler Demand)';
-      } else if (cat == MaterialCategory.aluminumCans) {
-        pricePerKg = 65.0;
-        action = 'SELL NOW (Smelting High Demand)';
-      } else if (cat == MaterialCategory.scrapIron) {
-        pricePerKg = 18.0;
-        action = 'SELL IMMEDIATELY (Junk Shop Active)';
-      } else if (cat == MaterialCategory.corrugatedCardboard) {
+      } else if (cat == MaterialCategory.metal) {
+        pricePerKg = 65.0; // Encompasses cans, aluminum & scrap metals
+        action = 'SELL NOW (Smelting & Junk Shop High Rate)';
+      } else if (cat == MaterialCategory.paper) {
         pricePerKg = 4.5;
         action = 'KEEP DRY / SELL SOON';
       }
@@ -247,7 +257,7 @@ class _ScanScreenState extends State<ScanScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                "Take a photo or point camera. KalakalVision classifies purity, grade, and local scrap market pricing.",
+                "Detects Plastic, Paper, and Metal (cans & scrap metals). AI calculates purity grade and local junk shop valuation.",
                 style: GoogleFonts.hankenGrotesk(
                   fontSize: 13,
                   color: isDark
@@ -762,16 +772,12 @@ class _ScanScreenState extends State<ScanScreen> {
 
   IconData _getCategoryIcon(MaterialCategory category) {
     switch (category) {
-      case MaterialCategory.plasticPet:
+      case MaterialCategory.plastic:
         return Icons.local_drink_outlined;
-      case MaterialCategory.aluminumCans:
-        return Icons.view_in_ar_outlined;
-      case MaterialCategory.corrugatedCardboard:
-        return Icons.inventory_2_outlined;
-      case MaterialCategory.scrapCopper:
-        return Icons.cable_outlined;
-      case MaterialCategory.scrapIron:
-        return Icons.hardware_outlined;
+      case MaterialCategory.metal:
+        return Icons.view_in_ar_outlined; // Cans and metal items
+      case MaterialCategory.paper:
+        return Icons.inventory_2_outlined; // Paper & cardboard
     }
   }
 }

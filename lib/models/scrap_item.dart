@@ -1,39 +1,29 @@
 enum MaterialCategory {
-  plasticPet,
-  aluminumCans,
-  corrugatedCardboard,
-  scrapCopper,
-  scrapIron,
+  plastic,
+  paper,
+  metal,
 }
 
 extension MaterialCategoryExtension on MaterialCategory {
   String get displayName {
     switch (this) {
-      case MaterialCategory.plasticPet:
-        return 'Plastic PET Bottles';
-      case MaterialCategory.aluminumCans:
-        return 'Aluminum Cans';
-      case MaterialCategory.corrugatedCardboard:
-        return 'Corrugated Cardboard';
-      case MaterialCategory.scrapCopper:
-        return 'Scrap Copper Wire';
-      case MaterialCategory.scrapIron:
-        return 'Scrap Iron / Metal';
+      case MaterialCategory.plastic:
+        return 'Plastic (Bottles & Containers)';
+      case MaterialCategory.paper:
+        return 'Paper & Cardboard';
+      case MaterialCategory.metal:
+        return 'Metal (Cans & Scrap Metals)';
     }
   }
 
   String get shortCode {
     switch (this) {
-      case MaterialCategory.plasticPet:
-        return 'PET';
-      case MaterialCategory.aluminumCans:
-        return 'ALU';
-      case MaterialCategory.corrugatedCardboard:
-        return 'CBD';
-      case MaterialCategory.scrapCopper:
-        return 'COP';
-      case MaterialCategory.scrapIron:
-        return 'IRN';
+      case MaterialCategory.plastic:
+        return 'PLASTIC';
+      case MaterialCategory.paper:
+        return 'PAPER';
+      case MaterialCategory.metal:
+        return 'METAL';
     }
   }
 }

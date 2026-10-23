@@ -15,7 +15,7 @@ class PriceTrendsScreen extends StatefulWidget {
 }
 
 class _PriceTrendsScreenState extends State<PriceTrendsScreen> {
-  MaterialCategory _selectedCategory = MaterialCategory.plasticPet;
+  MaterialCategory _selectedCategory = MaterialCategory.plastic;
   int _selectedHorizonDays = 7; // 7, 14, 30
 
   @override
@@ -461,16 +461,12 @@ class _PriceTrendsScreenState extends State<PriceTrendsScreen> {
 
   IconData _getCategoryIcon(MaterialCategory category) {
     switch (category) {
-      case MaterialCategory.plasticPet:
+      case MaterialCategory.plastic:
         return Icons.local_drink_outlined;
-      case MaterialCategory.aluminumCans:
+      case MaterialCategory.metal:
         return Icons.view_in_ar_outlined;
-      case MaterialCategory.corrugatedCardboard:
+      case MaterialCategory.paper:
         return Icons.inventory_2_outlined;
-      case MaterialCategory.scrapCopper:
-        return Icons.cable_outlined;
-      case MaterialCategory.scrapIron:
-        return Icons.hardware_outlined;
     }
   }
 }

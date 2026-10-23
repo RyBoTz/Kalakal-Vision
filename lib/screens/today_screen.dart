@@ -577,16 +577,12 @@ class TodayScreen extends StatelessWidget {
 
   IconData _getCategoryIcon(MaterialCategory category) {
     switch (category) {
-      case MaterialCategory.plasticPet:
+      case MaterialCategory.plastic:
         return Icons.local_drink_outlined;
-      case MaterialCategory.aluminumCans:
+      case MaterialCategory.metal:
         return Icons.view_in_ar_outlined;
-      case MaterialCategory.corrugatedCardboard:
+      case MaterialCategory.paper:
         return Icons.inventory_2_outlined;
-      case MaterialCategory.scrapCopper:
-        return Icons.cable_outlined;
-      case MaterialCategory.scrapIron:
-        return Icons.hardware_outlined;
     }
   }
 }
