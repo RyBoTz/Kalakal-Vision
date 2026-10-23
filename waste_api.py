@@ -40,14 +40,14 @@ def read_root():
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    if not file.content_type.startswith("image/"):
-        raise HTTPException(status_code=400, detail="Uploaded file is not an image.")
-
     try:
         contents = await file.read()
         image = Image.open(io.BytesIO(contents)).convert("RGB")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid image format: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Uploaded file is not a valid image format: {e}",
+        )
 
     # Run YOLO prediction (conf=0.20 to catch objects reasonably)
     results = model.predict(image, conf=0.20, verbose=False)
