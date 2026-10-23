@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/scrap_item.dart';
 import '../providers/app_state.dart';
+import '../services/yolo_api_service.dart';
 import '../theme/app_theme.dart';
 
 class ScanScreen extends StatefulWidget {
@@ -20,76 +22,162 @@ class _ScanScreenState extends State<ScanScreen> {
   bool _isFlashOn = false;
   bool _isMacroOn = true;
   ScrapScanResult? _lastResult;
+  Uint8List? _scannedImageBytes;
+  String? _detectedLabel;
   final ImagePicker _picker = ImagePicker();
 
-  void _triggerAiScan({MaterialCategory? categoryOverride}) async {
+  MaterialCategory _mapYoloClassToCategory(String yoloClass) {
+    switch (yoloClass.toLowerCase()) {
+      case 'plastic':
+        return MaterialCategory.plasticPet;
+      case 'metal':
+        return MaterialCategory.scrapIron;
+      case 'paper':
+        return MaterialCategory.corrugatedCardboard;
+      case 'glass':
+        return MaterialCategory.aluminumCans; // fallback recycle slot
+      case 'waste':
+      default:
+        return MaterialCategory.plasticPet;
+    }
+  }
+
+  Future<void> _processImageForYolo(Uint8List imageBytes, String filename) async {
     setState(() {
       _isScanning = true;
+      _scannedImageBytes = imageBytes;
     });
 
-    // Simulate real-time Edge AI Inference (0.7 seconds latency)
-    await Future.delayed(const Duration(milliseconds: 700));
-
-    final categories = [
-      MaterialCategory.plasticPet,
-      MaterialCategory.aluminumCans,
-      MaterialCategory.corrugatedCardboard,
-      MaterialCategory.scrapCopper,
-    ];
-
-    final cat = categoryOverride ?? (categories..shuffle()).first;
-    final grade = QualityGrade.gradeA;
-    final confidence = 0.965 + (0.03 * (cat.index % 2));
-    final double weight = 2.5 + (cat.index * 1.8);
-
-    double pricePerKg = 12.0;
-    String action = 'SELL NOW (Peak Demand)';
-    bool sellNow = true;
-
-    if (cat == MaterialCategory.aluminumCans) {
-      pricePerKg = 65.0;
-      action = 'SELL NOW (Smelting High Demand)';
-    } else if (cat == MaterialCategory.scrapCopper) {
-      pricePerKg = 340.0;
-      action = 'HOLD 7 DAYS (Supply Shortage)';
-      sellNow = false;
-    } else if (cat == MaterialCategory.corrugatedCardboard) {
-      pricePerKg = 4.0;
-      action = 'SELL IMMEDIATELY (Rate Dropping)';
-      sellNow = true;
-    }
-
-    final newResult = ScrapScanResult(
-      id: 'scan-${DateTime.now().millisecondsSinceEpoch}',
-      category: cat,
-      grade: grade,
-      confidence: confidence,
-      weightKg: double.parse(weight.toStringAsFixed(1)),
-      pricePerKg: pricePerKg,
-      timestamp: DateTime.now(),
-      actionRecommendation: action,
-      isSellNow: sellNow,
+    final response = await YoloApiService.predictImageBytes(
+      imageBytes,
+      filename: filename,
     );
 
-    widget.appState.addScanResult(newResult);
+    if (!mounted) return;
 
-    if (mounted) {
+    if (response.success && response.topDetection != null) {
+      final top = response.topDetection!;
+      final cat = _mapYoloClassToCategory(top.className);
+      final conf = top.confidence;
+      final grade = conf > 0.7
+          ? QualityGrade.gradeA
+          : (conf > 0.4 ? QualityGrade.gradeB : QualityGrade.gradeC);
+
+      double pricePerKg = 12.0;
+      String action = 'SELL NOW (Peak Demand)';
+      bool sellNow = true;
+
+      if (cat == MaterialCategory.plasticPet) {
+        pricePerKg = 14.0;
+        action = 'SELL NOW (High Recycler Demand)';
+      } else if (cat == MaterialCategory.aluminumCans) {
+        pricePerKg = 65.0;
+        action = 'SELL NOW (Smelting High Demand)';
+      } else if (cat == MaterialCategory.scrapIron) {
+        pricePerKg = 18.0;
+        action = 'SELL IMMEDIATELY (Junk Shop Active)';
+      } else if (cat == MaterialCategory.corrugatedCardboard) {
+        pricePerKg = 4.5;
+        action = 'KEEP DRY / SELL SOON';
+      }
+
+      final newResult = ScrapScanResult(
+        id: 'scan-${DateTime.now().millisecondsSinceEpoch}',
+        category: cat,
+        grade: grade,
+        confidence: conf,
+        weightKg: 2.0,
+        pricePerKg: pricePerKg,
+        timestamp: DateTime.now(),
+        actionRecommendation: action,
+        isSellNow: sellNow,
+      );
+
+      widget.appState.addScanResult(newResult);
+
       setState(() {
         _isScanning = false;
         _lastResult = newResult;
+        _detectedLabel = "YOLO Detected: ${top.className} (${(conf * 100).toStringAsFixed(1)}%)";
       });
+    } else {
+      // If API server is unreachable or didn't find waste, notify user
+      final errorMsg = response.errorMessage ?? 'No waste items detected in photo.';
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(errorMsg),
+          backgroundColor: Colors.deepOrange,
+        ),
+      );
+
+      setState(() {
+        _isScanning = false;
+      });
+    }
+  }
+
+  void _captureFromCamera() async {
+    try {
+      final XFile? photo = await _picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: 1280,
+        maxHeight: 1280,
+      );
+      if (photo != null) {
+        final bytes = await photo.readAsBytes();
+        await _processImageForYolo(bytes, photo.name);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Camera error: $e')),
+        );
+      }
     }
   }
 
   void _pickFromGallery() async {
     try {
-      final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+      final XFile? image = await _picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1280,
+        maxHeight: 1280,
+      );
       if (image != null) {
-        _triggerAiScan();
+        final bytes = await image.readAsBytes();
+        await _processImageForYolo(bytes, image.name);
       }
     } catch (e) {
-      _triggerAiScan();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Gallery error: $e')),
+        );
+      }
     }
+  }
+
+  void _triggerSimulatedScan(MaterialCategory cat) {
+    setState(() => _isScanning = true);
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
+      final newResult = ScrapScanResult(
+        id: 'scan-${DateTime.now().millisecondsSinceEpoch}',
+        category: cat,
+        grade: QualityGrade.gradeA,
+        confidence: 0.95,
+        weightKg: 3.0,
+        pricePerKg: 15.0,
+        timestamp: DateTime.now(),
+        actionRecommendation: 'SIMULATED DEMO',
+        isSellNow: true,
+      );
+      widget.appState.addScanResult(newResult);
+      setState(() {
+        _isScanning = false;
+        _lastResult = newResult;
+        _detectedLabel = "Demo Material: ${cat.displayName}";
+      });
+    });
   }
 
   @override
@@ -186,36 +274,72 @@ class _ScanScreenState extends State<ScanScreen> {
                 ),
                 child: Stack(
                   children: [
-                    // Simulated Live Camera Background Grid
-                    Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            _isScanning
-                                ? Icons.sync_rounded
-                                : Icons.center_focus_strong_rounded,
-                            size: 64,
-                            color: _isScanning
-                                ? Colors.greenAccent
-                                : Colors.white.withAlpha(120),
+                    // Background: Show picked/captured image if available, else standard placeholder
+                    if (_scannedImageBytes != null)
+                      Positioned.fill(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(24),
+                          child: Image.memory(
+                            _scannedImageBytes!,
+                            fit: BoxFit.cover,
                           ),
-                          const SizedBox(height: 12),
-                          Text(
-                            _isScanning
-                                ? "RUNNING YOLO INFERENCE..."
-                                : "Keep recyclables centered in frame",
-                            style: GoogleFonts.jetBrainsMono(
-                              fontSize: 12,
+                        ),
+                      )
+                    else
+                      Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              _isScanning
+                                  ? Icons.sync_rounded
+                                  : Icons.center_focus_strong_rounded,
+                              size: 64,
                               color: _isScanning
                                   ? Colors.greenAccent
-                                  : Colors.white70,
-                              fontWeight: FontWeight.w600,
+                                  : Colors.white.withAlpha(120),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(
+                              _isScanning
+                                  ? "RUNNING YOLO INFERENCE..."
+                                  : "Keep recyclables centered in frame",
+                              style: GoogleFonts.jetBrainsMono(
+                                fontSize: 12,
+                                color: _isScanning
+                                    ? Colors.greenAccent
+                                    : Colors.white70,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    // Detected YOLO Label Overlay Banner
+                    if (_detectedLabel != null)
+                      Positioned(
+                        bottom: 12,
+                        left: 16,
+                        right: 16,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.black87,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.greenAccent, width: 1.5),
+                          ),
+                          child: Text(
+                            _detectedLabel!,
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.jetBrainsMono(
+                              color: Colors.greenAccent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                        ],
+                        ),
                       ),
-                    ),
 
                     // Target Reticle Corners
                     Positioned(
@@ -268,7 +392,7 @@ class _ScanScreenState extends State<ScanScreen> {
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
-                                  "LATENCY <0.8s",
+                                  "YOLO Waste Model",
                                   style: GoogleFonts.jetBrainsMono(
                                     fontSize: 10,
                                     color: Colors.white,
@@ -327,10 +451,10 @@ class _ScanScreenState extends State<ScanScreen> {
                   Expanded(
                     flex: 2,
                     child: ElevatedButton.icon(
-                      onPressed: _isScanning ? null : () => _triggerAiScan(),
+                      onPressed: _isScanning ? null : _captureFromCamera,
                       icon: const Icon(Icons.camera_alt_rounded),
                       label: Text(
-                        _isScanning ? "INSPECTING..." : "SCAN MATERIAL",
+                        _isScanning ? "INSPECTING..." : "TAKE PHOTO",
                         style: GoogleFonts.hankenGrotesk(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,
@@ -396,7 +520,7 @@ class _ScanScreenState extends State<ScanScreen> {
                         label: Text(cat.shortCode),
                         onPressed: _isScanning
                             ? null
-                            : () => _triggerAiScan(categoryOverride: cat),
+                            : () => _triggerSimulatedScan(cat),
                         avatar: Icon(_getCategoryIcon(cat), size: 16),
                         backgroundColor: isDark
                             ? AppColors.surfaceContainerHighDark
